@@ -1,6 +1,6 @@
 // src/utils/sendApi.ts
 import { PreProcessorResult } from './pre-processor';
-import { listModels } from './inferenceServer';
+import { listModels, getCustomServerApiKey } from './inferenceServer';
 
 /**
  * Decrements the quota counter stored in localStorage and dispatches an event.
@@ -123,6 +123,12 @@ export async function fetchResponse(
         headers['Authorization'] = `Bearer ${token}`;
       }
       // Trigger the optimistic UI update
+    } else {
+      // Check if this is a custom server with an API key
+      const customServerApiKey = getCustomServerApiKey(serverAddress);
+      if (customServerApiKey) {
+        headers['Authorization'] = `Bearer ${customServerApiKey}`;
+      }
     }
 
     const requestBody = JSON.stringify({

@@ -12,6 +12,7 @@ import {
   removeCustomServer,
   toggleCustomServer,
   checkCustomServer,
+  updateCustomServerApiKey,
   type CustomServer
 } from '@utils/inferenceServer';
 import { Logger } from '@utils/logging';
@@ -357,10 +358,18 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   // Removed: No longer need to save server address to localStorage
 
   // Custom server handlers
-  const handleAddCustomServer = (address: string) => {
+  const handleAddCustomServer = (address: string, apiKey?: string) => {
     const updated = addCustomServer(address);
+    if (apiKey) {
+      updateCustomServerApiKey(address, apiKey);
+    }
     setCustomServers(updated);
     fetchModels();
+  };
+
+  const handleUpdateApiKey = (address: string, apiKey: string) => {
+    const updated = updateCustomServerApiKey(address, apiKey);
+    setCustomServers(updated);
   };
 
   const handleRemoveCustomServer = (address: string) => {
@@ -607,7 +616,8 @@ const AppHeader: React.FC<AppHeaderProps> = ({
           onAddCustomServer: handleAddCustomServer,
           onRemoveCustomServer: handleRemoveCustomServer,
           onToggleCustomServer: handleToggleCustomServer,
-          onCheckCustomServer: handleCheckCustomServer
+          onCheckCustomServer: handleCheckCustomServer,
+          onUpdateApiKey: handleUpdateApiKey
         }}
       />
 

@@ -16,6 +16,7 @@ export interface CustomServer {
   address: string;
   enabled: boolean;
   status: 'unchecked' | 'online' | 'offline';
+  apiKey?: string;
 }
 
 // Global state for inference addresses
@@ -72,7 +73,7 @@ export function getCustomServers(): CustomServer[] {
   return [...customServers];
 }
 
-export function addCustomServer(address: string): CustomServer[] {
+export function addCustomServer(address: string, apiKey?: string): CustomServer[] {
   // Normalize the address (trim whitespace)
   const normalizedAddress = address.trim();
 
@@ -84,7 +85,8 @@ export function addCustomServer(address: string): CustomServer[] {
   const newServer: CustomServer = {
     address: normalizedAddress,
     enabled: true,
-    status: 'unchecked'
+    status: 'unchecked',
+    apiKey: apiKey || undefined
   };
 
   customServers.push(newServer);
@@ -120,6 +122,20 @@ export function toggleCustomServer(address: string): CustomServer[] {
   return [...customServers];
 }
 
+export function updateCustomServerApiKey(address: string, apiKey: string): CustomServer[] {
+  const server = customServers.find(s => s.address === address);
+  if (server) {
+    server.apiKey = apiKey || undefined;
+    localStorage.setItem(CUSTOM_SERVERS_KEY, JSON.stringify(customServers));
+  }
+  return [...customServers];
+}
+
+export function getCustomServerApiKey(address: string): string | undefined {
+  const server = customServers.find(s => s.address === address);
+  return server?.apiKey;
+}
+
 export function updateCustomServerStatus(address: string, status: 'online' | 'offline'): CustomServer[] {
   const server = customServers.find(s => s.address === address);
   if (server) {
@@ -138,7 +154,8 @@ export function updateCustomServerStatus(address: string, status: 'online' | 'of
 }
 
 export async function checkCustomServer(address: string): Promise<ServerResponse> {
-  const result = await checkInferenceServer(address);
+  const server = customServers.find(s => s.address === address);
+  const result = await checkInferenceServer(address, server?.apiKey);
 
   // Update the custom server status
   updateCustomServerStatus(address, result.status);
@@ -146,13 +163,19 @@ export async function checkCustomServer(address: string): Promise<ServerResponse
   return result;
 }
 
-export async function checkInferenceServer(address: string): Promise<ServerResponse> {
+export async function checkInferenceServer(address: string, apiKey?: string): Promise<ServerResponse> {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
     const response = await fetch(`${address}/v1/models`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     });
 
     if (response.ok) {
@@ -173,9 +196,18 @@ export async function checkInferenceServer(address: string): Promise<ServerRespo
 
 async function listModelsFromAddress(address: string): Promise<Model[]> {
   try {
+    const server = customServers.find(s => s.address === address);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (server?.apiKey) {
+      headers['Authorization'] = `Bearer ${server.apiKey}`;
+    }
+
     const response = await fetch(`${address}/v1/models`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
     });
 
     if (!response.ok) {

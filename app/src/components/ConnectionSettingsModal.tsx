@@ -1,7 +1,7 @@
 // components/ConnectionSettingsModal.tsx
 
 import React, { useState } from 'react';
-import { X, RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { X, RefreshCw, Plus, Trash2, Key, Eye, EyeOff } from 'lucide-react';
 import type { CustomServer } from '@utils/inferenceServer';
 
 // Re-using the types from AppHeader. You might want to move these to a shared types file.
@@ -24,10 +24,11 @@ interface ConnectionSettingsModalProps {
   localServerOnline: boolean;
   checkLocalServer: () => void;
   customServers: CustomServer[];
-  onAddCustomServer: (address: string) => void;
+  onAddCustomServer: (address: string, apiKey?: string) => void;
   onRemoveCustomServer: (address: string) => void;
   onToggleCustomServer: (address: string) => void;
   onCheckCustomServer: (address: string) => void;
+  onUpdateApiKey: (address: string, apiKey: string) => void;
 }
 
 const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = ({
@@ -45,10 +46,15 @@ const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = ({
   onRemoveCustomServer,
   onToggleCustomServer,
   onCheckCustomServer,
+  onUpdateApiKey,
 }) => {
   const [isAddingServer, setIsAddingServer] = useState(false);
   const [newServerAddress, setNewServerAddress] = useState('');
+  const [newServerApiKey, setNewServerApiKey] = useState('');
   const [addError, setAddError] = useState('');
+  const [editingApiKeyServer, setEditingApiKeyServer] = useState<string | null>(null);
+  const [editingApiKeyValue, setEditingApiKeyValue] = useState('');
+  const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
 
   if (!isOpen) return null;
 
@@ -70,12 +76,35 @@ const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = ({
     // Try to validate URL format
     try {
       new URL(newServerAddress);
-      onAddCustomServer(newServerAddress);
+      onAddCustomServer(newServerAddress, newServerApiKey.trim() || undefined);
       setNewServerAddress('');
+      setNewServerApiKey('');
       setIsAddingServer(false);
     } catch (error) {
       setAddError('Invalid URL format');
     }
+  };
+
+  const handleUpdateApiKey = () => {
+    if (editingApiKeyServer) {
+      onUpdateApiKey(editingApiKeyServer, editingApiKeyValue.trim());
+      setEditingApiKeyServer(null);
+      setEditingApiKeyValue('');
+    }
+  };
+
+  const toggleShowApiKey = (address: string) => {
+    setShowApiKey(prev => ({ ...prev, [address]: !prev[address] }));
+  };
+
+  const startEditingApiKey = (server: CustomServer) => {
+    setEditingApiKeyServer(server.address);
+    setEditingApiKeyValue(server.apiKey || '');
+  };
+
+  const cancelEditingApiKey = () => {
+    setEditingApiKeyServer(null);
+    setEditingApiKeyValue('');
   };
 
   return (
@@ -201,6 +230,65 @@ const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = ({
                       </button>
                     </div>
                   </div>
+                  {/* API Key Section */}
+                  <div className="mt-2 pt-2 border-t border-gray-100">
+                    {editingApiKeyServer === server.address ? (
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="text"
+                          value={editingApiKeyValue}
+                          onChange={(e) => setEditingApiKeyValue(e.target.value)}
+                          placeholder="Enter API key (optional)"
+                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                        />
+                        <button
+                          onClick={handleUpdateApiKey}
+                          className="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={cancelEditingApiKey}
+                          className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2 flex-1 min-w-0">
+                          <Key className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                          {server.apiKey ? (
+                            <span className="text-xs text-gray-600 truncate">
+                              {showApiKey[server.address] ? server.apiKey : '••••••••••••'}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">No API key</span>
+                          )}
+                          {server.apiKey && (
+                            <button
+                              onClick={() => toggleShowApiKey(server.address)}
+                              className="p-0.5 hover:bg-gray-100 rounded flex-shrink-0"
+                              title={showApiKey[server.address] ? "Hide API key" : "Show API key"}
+                            >
+                              {showApiKey[server.address] ? (
+                                <EyeOff className="h-3 w-3 text-gray-500" />
+                              ) : (
+                                <Eye className="h-3 w-3 text-gray-500" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => startEditingApiKey(server)}
+                          className="text-xs text-blue-600 hover:text-blue-800 ml-2 flex-shrink-0"
+                        >
+                          {server.apiKey ? 'Edit' : 'Add'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -228,6 +316,22 @@ const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 autoFocus
               />
+              <div className="relative mb-2">
+                <input
+                  type={showApiKey['new'] ? 'text' : 'password'}
+                  value={newServerApiKey}
+                  onChange={(e) => setNewServerApiKey(e.target.value)}
+                  placeholder="API Key (optional for local servers)"
+                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleShowApiKey('new')}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showApiKey['new'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               {addError && (
                 <p className="text-xs text-red-500 mb-2">{addError}</p>
               )}
@@ -242,6 +346,7 @@ const ConnectionSettingsModal: React.FC<ConnectionSettingsModalProps> = ({
                   onClick={() => {
                     setIsAddingServer(false);
                     setNewServerAddress('');
+                    setNewServerApiKey('');
                     setAddError('');
                   }}
                   className="flex-1 py-1.5 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-medium"
