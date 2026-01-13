@@ -1,6 +1,7 @@
 Ob-server/certs
 
 /video
+/screenshot
 
 website/dist
 website/build
