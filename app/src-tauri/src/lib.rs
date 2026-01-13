@@ -38,6 +38,7 @@ use tower_http::{
 
 struct AppSettings {
     ollama_url: Mutex<Option<String>>,
+    ollama_api_key: Mutex<Option<String>>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -97,12 +98,42 @@ async fn get_ollama_url(settings: State<'_, AppSettings>) -> Result<Option<Strin
 }
 
 #[tauri::command]
-async fn check_ollama_servers(urls: Vec<String>) -> Result<Vec<String>, String> {
-    // <-- No State parameter
+async fn set_ollama_api_key(
+    new_api_key: Option<String>,
+    settings: State<'_, AppSettings>,
+    shortcut_state: State<'_, UnifiedShortcutState>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    log::info!("Setting Ollama API key");
+
+    // Update in-memory AppSettings
+    *settings.ollama_api_key.lock().unwrap() = new_api_key.clone();
+
+    // Persist to disk (also updates UnifiedShortcutState)
+    shortcuts::save_ollama_api_key(&app_handle, &shortcut_state, new_api_key)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_ollama_api_key(settings: State<'_, AppSettings>) -> Result<Option<String>, String> {
+    log::info!("Getting Ollama API key");
+    let api_key = settings.ollama_api_key.lock().unwrap().clone();
+    Ok(api_key)
+}
+
+#[tauri::command]
+async fn check_ollama_servers(
+    urls: Vec<String>,
+    settings: State<'_, AppSettings>,
+) -> Result<Vec<String>, String> {
     log::info!(
         "Rust backend received request to check servers (using dedicated client): {:?}",
         urls
     );
+
+    // Get the API key if available
+    let api_key = settings.ollama_api_key.lock().unwrap().clone();
 
     // Create a new, temporary client just for this operation.
     let client = Client::new();
@@ -111,10 +142,17 @@ async fn check_ollama_servers(urls: Vec<String>) -> Result<Vec<String>, String> 
     let checks = urls.into_iter().map(|url| {
         let client = client.clone();
         let check_url = format!("{}/v1/models", url);
+        let api_key_clone = api_key.clone();
 
         tokio::spawn(async move {
-            match client
-                .get(&check_url)
+            let mut request = client.get(&check_url);
+            
+            // Add API key to headers if available
+            if let Some(key) = api_key_clone {
+                request = request.header("Authorization", format!("Bearer {}", key));
+            }
+
+            match request
                 .timeout(std::time::Duration::from_millis(2500))
                 .send()
                 .await
@@ -537,6 +575,8 @@ pub fn run() {
             get_server_url,
             set_ollama_url,
             get_ollama_url,
+            set_ollama_api_key,
+            get_ollama_api_key,
             check_ollama_servers,
             get_overlay_messages,
             clear_overlay_messages,

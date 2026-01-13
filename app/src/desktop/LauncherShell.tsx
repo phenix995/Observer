@@ -56,6 +56,8 @@ function LauncherShell() {
   // --- SERVER CONFIGURATION STATE ---
   const [showServerConfig, setShowServerConfig] = useState(false);
   const [customUrlInput, setCustomUrlInput] = useState('');
+  const [customApiKeyInput, setCustomApiKeyInput] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [showNoServerDialog, setShowNoServerDialog] = useState(false);
   
@@ -140,10 +142,18 @@ function LauncherShell() {
       // Promise 1: Browser-based fetch
       const browserCheckPromise = new Promise<string[]>(async (resolve, reject) => {
         try {
+          // Get API key for browser check
+          const apiKey = await invoke<string | null>('get_ollama_api_key').catch(() => null);
+          
+          const headers: Record<string, string> = { 'Accept': 'application/json' };
+          if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`;
+          }
+          
           const fetchPromises = urlsToTest.map(url =>
             fetch(`${url}/v1/models`, {
               method: 'GET',
-              headers: { 'Accept': 'application/json' },
+              headers,
               signal: AbortSignal.timeout(2500),
             }).then(response => {
               if (!response.ok) throw new Error(`Server at ${url} not OK.`);
@@ -194,9 +204,10 @@ function LauncherShell() {
     }
   }, []);
 
-  // --- NEW: Function to handle saving the custom URL ---
+  // --- NEW: Function to handle saving the custom URL and API key ---
   const handleSaveSettings = useCallback(async () => {
     const urlToSave = customUrlInput.trim() === '' ? null : customUrlInput.trim();
+    const apiKeyToSave = customApiKeyInput.trim() === '' ? null : customApiKeyInput.trim();
 
     // Simple validation
     if (urlToSave && !urlToSave.startsWith('http')) {
@@ -206,6 +217,7 @@ function LauncherShell() {
 
     try {
       await invoke('set_ollama_url', { newUrl: urlToSave });
+      await invoke('set_ollama_api_key', { newApiKey: apiKeyToSave });
       setSaveFeedback({ message: 'Settings saved!', type: 'success' });
       // Important: Immediately re-run the check with the new settings
       runServerChecks();
@@ -213,7 +225,7 @@ function LauncherShell() {
       console.error("Failed to save settings:", error);
       setSaveFeedback({ message: 'Error saving settings.', type: 'error' });
     }
-  }, [customUrlInput, runServerChecks]);
+  }, [customUrlInput, customApiKeyInput, runServerChecks]);
   
   // --- UNIFIED SHORTCUT LOADING AND SAVING ---
   const loadAllShortcuts = useCallback(async () => {
@@ -336,12 +348,18 @@ function LauncherShell() {
       .catch(console.error);
   }, []);
 
-  // 2. NEW: On load, fetch the saved custom URL to populate the input field.
+  // 2. NEW: On load, fetch the saved custom URL and API key to populate the input fields.
   useEffect(() => {
-    invoke<string | null>('get_ollama_url')
-      .then(url => {
+    Promise.all([
+      invoke<string | null>('get_ollama_url'),
+      invoke<string | null>('get_ollama_api_key').catch(() => null)
+    ])
+      .then(([url, apiKey]) => {
         if (url) {
           setCustomUrlInput(url);
+        }
+        if (apiKey) {
+          setCustomApiKeyInput(apiKey);
         }
       })
       .catch(console.error);
@@ -561,35 +579,65 @@ function LauncherShell() {
 
               {showServerConfig && (
                 <div className="mt-2 bg-slate-50 border border-slate-200 rounded-xl p-4 animate-fade-in">
-                  <div className="space-y-3 text-left">
-                <label htmlFor="custom-url" className="block text-sm font-medium text-slate-700">
-                  Custom Model Server URL
-                </label>
-                <div className="flex items-center space-x-2">
-                  <input
-                    id="custom-url"
-                    type="text"
-                    value={customUrlInput}
-                    onChange={(e) => setCustomUrlInput(e.target.value)}
-                    placeholder="e.g. http://192.168.1.50:11434"
-                    className="flex-grow px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  />
-                  <button
-                    onClick={handleSaveSettings}
-                    className="px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all font-medium"
-                  >
-                    Save
-                  </button>
-                </div>
-                {saveFeedback && (
-                  <div className={`flex items-center text-sm ${saveFeedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                    {saveFeedback.type === 'success' ? <Check className="h-4 w-4 mr-2" /> : <AlertTriangle className="h-4 w-4 mr-2" />}
-                    {saveFeedback.message}
-                  </div>
-                )}
-                    <p className="text-xs text-slate-500 mt-1">
-                      Leave empty to auto-detect Ollama (127.0.0.1:11434) or other local servers
-                    </p>
+                  <div className="space-y-4 text-left">
+                    <div>
+                      <label htmlFor="custom-url" className="block text-sm font-medium text-slate-700">
+                        Custom Model Server URL
+                      </label>
+                      <div className="flex items-center space-x-2 mt-2">
+                        <input
+                          id="custom-url"
+                          type="text"
+                          value={customUrlInput}
+                          onChange={(e) => setCustomUrlInput(e.target.value)}
+                          placeholder="e.g. http://192.168.1.50:11434"
+                          className="flex-grow px-4 py-3 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        />
+                        <button
+                          onClick={handleSaveSettings}
+                          className="px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all font-medium"
+                        >
+                          Save
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Leave empty to auto-detect Ollama (127.0.0.1:11434) or other local servers
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label htmlFor="custom-api-key" className="block text-sm font-medium text-slate-700">
+                        API Key (optional for local servers)
+                      </label>
+                      <div className="relative mt-2">
+                        <input
+                          id="custom-api-key"
+                          type={showApiKey ? 'text' : 'password'}
+                          value={customApiKeyInput}
+                          onChange={(e) => setCustomApiKeyInput(e.target.value)}
+                          placeholder="Enter API key for authentication"
+                          className="w-full px-4 py-3 pr-12 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          title={showApiKey ? 'Hide API key' : 'Show API key'}
+                        >
+                          {showApiKey ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Required for OpenAI-compatible endpoints like OpenRouter, vLLM, or LM Studio
+                      </p>
+                    </div>
+                    
+                    {saveFeedback && (
+                      <div className={`flex items-center text-sm ${saveFeedback.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                        {saveFeedback.type === 'success' ? <Check className="h-4 w-4 mr-2" /> : <AlertTriangle className="h-4 w-4 mr-2" />}
+                        {saveFeedback.message}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

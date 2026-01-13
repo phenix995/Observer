@@ -9,6 +9,7 @@ use crate::CommandState;
 pub struct AppConfig {
     pub shortcuts: UnifiedShortcutConfig,
     pub ollama_url: Option<String>,
+    pub ollama_api_key: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -16,6 +17,7 @@ impl Default for AppConfig {
         Self {
             shortcuts: UnifiedShortcutConfig::default(),
             ollama_url: Some("http://localhost:11434".to_string()),
+            ollama_api_key: None,
         }
     }
 }
@@ -228,6 +230,21 @@ pub fn save_ollama_url(app_handle: &AppHandle, shortcut_state: &State<UnifiedSho
     // Get current config and update ollama_url
     let mut app_config = shortcut_state.config.lock().unwrap().clone();
     app_config.ollama_url = ollama_url;
+
+    // Save to disk
+    save_config_to_disk(app_handle, &app_config)?;
+
+    // Update in-memory state
+    *shortcut_state.config.lock().unwrap() = app_config;
+
+    Ok(())
+}
+
+// Helper function to save ollama API key while preserving other settings
+pub fn save_ollama_api_key(app_handle: &AppHandle, shortcut_state: &State<UnifiedShortcutState>, ollama_api_key: Option<String>) -> Result<(), String> {
+    // Get current config and update ollama_api_key
+    let mut app_config = shortcut_state.config.lock().unwrap().clone();
+    app_config.ollama_api_key = ollama_api_key;
 
     // Save to disk
     save_config_to_disk(app_handle, &app_config)?;
